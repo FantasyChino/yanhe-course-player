@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f6f2">
+  <meta name="description" content="在本地同步播放 PPT 与课堂录像，随时切换双画面或单画面。视频始终留在你的电脑上。">
+  <title>同频 · 双视频学习播放器</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./player.js"></script>
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7V5Z"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+      <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3"/></symbol>
+      <symbol id="i-dual" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M14 5v14"/></symbol>
+      <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/><path d="M9 12h1v5m3-4v3a1 1 0 0 0 2 0v-3a1 1 0 0 0-2 0Z"/></symbol>
+      <symbol id="i-forward" viewBox="0 0 24 24"><path d="M20 10a8 8 0 1 0-1 8m1-14v6h-6"/><path d="M9 12h1v5m3-4v3a1 1 0 0 0 2 0v-3a1 1 0 0 0-2 0Z"/></symbol>
+      <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="m11 5-6 4H2v6h3l6 4V5Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
+      <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1 8M3 4v6h6M12 7v5l3 2"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 5-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8m4 0h4M4 17h3m4 0h9"/><circle cx="14" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Zm0 2h18"/></symbol>
+      <symbol id="i-subtitle" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 10a2 2 0 1 0 0 4m8-4a2 2 0 1 0 0 4"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="app">
+    <header class="app-header">
+      <a class="brand" href="#" aria-label="同频双视频播放器首页">
+        <span class="brand-symbol" aria-hidden="true"><span></span><span></span></span>
+        <span class="brand-name">同频<span class="brand-english">DUO PLAYER</span></span>
+      </a>
+      <div class="header-right"><span class="local-badge"><span class="status-dot"></span>本地学习空间</span><span class="version">v1.2</span></div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div class="intro-copy">
+          <p class="eyebrow">TWO VIEWS. ONE TIMELINE.</p>
+          <h1 id="page-title">双画面，一起看懂<span class="title-dot">。</span></h1>
+          <p class="intro-description">PPT 看细节，课堂听讲解。选一节课，或拖入两个视频，让学习回到同一个节奏。</p>
+        </div>
+        <button id="pick-pair" class="button button-primary" type="button" title="同时选择本地 PPT 与课堂视频" aria-label="选择两个本地视频"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>选择两个视频</button>
+      </section>
+
+      <input id="file-camera" type="file" accept="video/*" hidden>
+      <input id="file-screen" type="file" accept="video/*" hidden>
+      <input id="file-pair" type="file" accept="video/*" multiple hidden>
+      <input id="file-subtitle" type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>
+
+      <section id="course-library" class="course-library" aria-labelledby="library-title">
+        <h2 id="library-title" class="library-title"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地课程库</h2>
+        <div id="library-controls" class="library-controls" hidden>
+          <label class="library-course-label" for="library-course"><span class="visually-hidden">选择课程</span><select id="library-course" title="选择本地课程" aria-label="选择本地课程"><option value="">选择课程</option></select><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></label>
+          <p id="library-current" class="library-current">选择节次，自动载入 PPT 与课堂录像</p>
+        </div>
+        <p id="library-status" class="library-status" role="status" aria-live="polite">通过桌面快捷方式打开，即可读取课程库</p>
+      </section>
+
+      <div id="study-layout" class="study-layout">
+        <details id="lesson-sidebar" class="lesson-sidebar" open hidden>
+          <summary class="lesson-sidebar-heading"><span>课程目录</span><span id="lesson-count" class="lesson-sidebar-hint">0 节</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+          <h3 id="lesson-course-name" class="lesson-course-name">课程节次</h3>
+          <div id="lesson-list" class="lesson-list" role="list" aria-label="课程节次"><p class="lesson-empty">选择课程后，在这里查看全部节次</p></div>
+          <p class="lesson-sidebar-note"><span class="status-dot"></span>课堂与 PPT 自动配对</p>
+        </details>
+
+      <div class="player-column">
+      <section class="player-card" aria-label="双视频同步播放工作台">
+        <div id="player-shell" class="player-shell">
+          <div id="workspace" class="workspace" data-mode="dual">
+            <section id="stage-screen" class="video-stage stage-screen" aria-label="PPT 屏幕视频">
+              <div class="stage-heading"><div class="stage-caption"><span class="stage-kind"><svg class="icon" aria-hidden="true"><use href="#i-screen"/></svg>PPT / 屏幕</span><span id="name-screen" class="file-name" title="尚未选择视频">尚未选择视频</span></div><button id="pick-screen" class="stage-pick" type="button" title="选择或替换 PPT 屏幕视频" aria-label="选择 PPT 视频"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><span>选择视频</span></button></div>
+              <div id="drop-screen" class="drop-zone" tabindex="0" role="button" aria-label="点击或拖入 PPT 屏幕视频">
+                <video id="video-screen" playsinline preload="metadata" tabindex="-1" aria-label="PPT 屏幕视频画面"></video>
+                <div id="empty-screen" class="empty-state">
+                  <span class="empty-icon screen-empty-icon"><svg aria-hidden="true" viewBox="0 0 64 64"><rect x="8" y="11" width="48" height="34" rx="4"/><path d="M23 55h18M32 45v10M17 21h16m-16 7h28m-28 7h20"/><path class="empty-icon-accent" d="m43 18 6 5-6 5"/></svg></span>
+                  <h2>把 PPT 放在这里</h2>
+                  <p>选择节次自动载入，也可拖入 PPT 视频</p>
+                  <span class="drop-hint"><span>01</span>看清每一个知识点</span>
+                </div>
+              </div>
+              <div class="stage-corner" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            </section>
+
+            <section id="stage-camera" class="video-stage stage-camera" aria-label="课堂录像">
+              <div class="stage-heading"><div class="stage-caption"><span class="stage-kind"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg>课堂 / 录像</span><span id="name-camera" class="file-name" title="尚未选择视频">尚未选择视频</span></div><button id="pick-camera" class="stage-pick" type="button" title="选择或替换课堂录像" aria-label="选择课堂录像"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><span>选择视频</span></button></div>
+              <div id="drop-camera" class="drop-zone" tabindex="0" role="button" aria-label="点击或拖入课堂录像">
+                <video id="video-camera" playsinline preload="metadata" tabindex="-1" aria-label="课堂录像画面"></video>
+                <div id="empty-camera" class="empty-state">
+                  <span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 64 64"><rect x="9" y="17" width="32" height="30" rx="5"/><path d="m41 27 14-8v26l-14-8"/><path class="empty-icon-accent" d="m22 26 10 6-10 6Z"/></svg></span>
+                  <h2>把课堂带到身边</h2>
+                  <p>选择节次自动载入，也可拖入课堂录像</p>
+                  <span class="drop-hint"><span>02</span>跟上老师的每一步</span>
+                </div>
+              </div>
+              <div class="stage-corner" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            </section>
+          </div>
+          <div id="subtitle-overlay" class="subtitle-overlay" aria-label="视频字幕" hidden></div>
+        </div>
+
+        <div id="control-dock" class="control-dock" aria-label="播放器控制选项">
+          <div class="workspace-toolbar">
+            <div class="workspace-heading"><span class="small-label">播放工作台</span><span class="toolbar-divider"></span><span id="sync-status" class="sync-status"><span class="status-dot"></span>等待载入</span></div>
+            <div class="workspace-actions">
+              <div class="mode-switch" role="group" aria-label="选择播放布局">
+                <button class="mode-button" data-mode="dual" type="button" aria-pressed="true" title="双画面（快捷键 1）" aria-label="显示双画面"><svg class="icon" aria-hidden="true"><use href="#i-dual"/></svg><span>双画面</span></button>
+                <button class="mode-button" data-mode="screen" type="button" aria-pressed="false" title="只看 PPT（快捷键 2）" aria-label="只显示 PPT 视频"><svg class="icon" aria-hidden="true"><use href="#i-screen"/></svg><span>只看 PPT</span></button>
+                <button class="mode-button" data-mode="camera" type="button" aria-pressed="false" title="只看课堂（快捷键 3）" aria-label="只显示课堂录像"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg><span>只看课堂</span></button>
+              </div>
+              <button id="swap-files" class="icon-button swap-button" type="button" title="交换 PPT 与课堂视频文件" aria-label="交换两个视频文件"><svg class="icon" aria-hidden="true"><use href="#i-swap"/></svg></button>
+            </div>
+          </div>
+          <div class="playback-controls">
+            <div class="timeline"><span id="time-current" class="time-label">00:00</span><input id="seek-range" class="seek-range" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度" title="拖动以跳转播放位置"><span id="time-duration" class="time-label">00:00</span></div>
+            <div class="controls-row">
+              <div class="transport-controls">
+                <button id="backward" class="icon-button" type="button" title="后退 10 秒（←）" aria-label="后退 10 秒"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button>
+                <button id="play-toggle" class="play-button" type="button" title="播放 / 暂停（空格）" aria-label="播放"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button>
+                <button id="forward" class="icon-button" type="button" title="前进 10 秒（→）" aria-label="前进 10 秒"><svg class="icon" aria-hidden="true"><use href="#i-forward"/></svg></button>
+                <button id="resume-button" class="resume-button" type="button" hidden title="继续上次观看的位置" aria-label="继续上次播放进度">继续上次</button>
+              </div>
+              <div class="media-settings">
+                <label class="select-control speed-control" for="speed-select"><span>倍速</span><select id="speed-select" title="选择播放倍速" aria-label="播放倍速"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2.0×</option><option value="2.5">2.5×</option><option value="3">3.0×</option></select></label>
+                <span class="control-divider"></span>
+                <label class="select-control audio-control" for="audio-select"><span>音频</span><select id="audio-select" title="选择双画面或单画面播放时使用的音频" aria-label="选择音频来源"><option value="camera" selected>课堂音频</option><option value="screen">PPT 音频</option><option value="mute">静音</option></select></label>
+                <label class="volume-control" for="volume-range"><svg class="icon" aria-hidden="true"><use href="#i-volume"/></svg><input id="volume-range" type="range" min="0" max="1" value="0.8" step="0.01" aria-label="音量" title="调节音量"></label>
+                <span class="control-divider fullscreen-divider"></span>
+                <button id="fullscreen" class="icon-button" type="button" title="切换全屏（F）" aria-label="切换播放器全屏"><svg class="icon" aria-hidden="true"><use href="#i-fullscreen"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+        <div class="fine-controls">
+          <div class="offset-section"><div class="offset-label"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><label for="offset-input">PPT 时间微调</label></div><div class="offset-stepper"><button id="offset-minus" type="button" title="PPT 时间偏移减少 0.5 秒" aria-label="减少 PPT 时间偏移">−</button><input id="offset-input" type="number" value="0" step="0.1" aria-label="PPT 相对课堂的时间偏移，单位秒" title="调整 PPT 相对课堂的时间偏移"><span>秒</span><button id="offset-plus" type="button" title="PPT 时间偏移增加 0.5 秒" aria-label="增加 PPT 时间偏移">+</button></div><button id="reset-offset" class="text-button" type="button" title="将 PPT 时间偏移归零" aria-label="重置时间偏移">归零</button><span class="offset-tip">画面没对齐？微调一下。</span></div>
+          <button id="reset-button" class="text-button reset-button" type="button" title="回到视频开头" aria-label="回到视频开头"><svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg>回到开头</button>
+          <div class="subtitle-settings" role="group" aria-label="字幕设置">
+            <button id="pick-subtitle" class="subtitle-import" type="button" title="导入本地 SRT 或 VTT 字幕" aria-label="导入本地字幕"><svg class="icon" aria-hidden="true"><use href="#i-subtitle"/></svg>导入字幕</button>
+            <span id="subtitle-name" class="subtitle-name" title="可为当前课节导入本地 SRT / VTT 字幕">可导入本节课 SRT / VTT</span>
+            <button id="subtitle-toggle" class="subtitle-toggle" type="button" aria-pressed="true" title="显示或隐藏字幕" aria-label="显示或隐藏字幕" disabled>字幕开启</button>
+            <label class="subtitle-field" for="subtitle-source"><span>跟随</span><select id="subtitle-source" title="选择字幕对应的视频时间" aria-label="字幕时间来源"><option value="camera">课堂时间</option><option value="screen">PPT 时间</option></select></label>
+            <label class="subtitle-field subtitle-delay-field" for="subtitle-delay"><span>延后</span><input id="subtitle-delay" type="number" value="0" min="-86400" max="86400" step="0.1" title="正数延后显示字幕，负数提前" aria-label="字幕延后秒数，负数提前"><span>秒</span></label>
+            <label class="subtitle-field" for="subtitle-size"><span>字号</span><select id="subtitle-size" title="选择字幕字号" aria-label="字幕字号"><option value="20">小</option><option value="26" selected>标准</option><option value="32">大</option><option value="40">特大</option></select></label>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <div class="workspace-footnote"><p id="status-message" role="status" aria-live="polite"><span class="message-dot"></span>选择课程和节次，即可同步观看；也可手动拖入两个视频。</p><button id="shortcut-toggle" class="text-button" type="button" title="查看键盘快捷键" aria-label="展开键盘快捷键说明" aria-expanded="false" aria-controls="shortcut-panel"><svg class="icon" aria-hidden="true"><use href="#i-keyboard"/></svg>快捷键</button></div>
+      <div id="shortcut-panel" class="shortcut-panel" hidden><span><kbd>Space</kbd>播放 / 暂停</span><span><kbd>←</kbd><kbd>→</kbd>跳转 10 秒</span><span><kbd>1</kbd>双画面</span><span><kbd>2</kbd>PPT</span><span><kbd>3</kbd>课堂</span><span><kbd>F</kbd>全屏</span></div>
+      </div>
+      </div>
+
+      <section class="how-it-works" aria-label="使用提示"><div><span class="step-number">01</span><div><h3>选课即播</h3><p>选择课程和节次，也可手动拖入视频</p></div></div><div><span class="step-number">02</span><div><h3>共享同一条时间轴</h3><p>播放、暂停、拖动进度，一次控制两个画面</p></div></div><div><span class="step-number">03</span><div><h3>按自己的节奏学习</h3><p>随时切换画面、音频与播放倍速</p></div></div></section>
+    </main>
+
+    <footer class="app-footer"><span class="footer-note"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>视频只在本地读取，不上传到服务器</span><span class="footer-signature">专注此刻，同频学习<span class="footer-spark">✳</span></span></footer>
+  </div>
+</body>
+</html>

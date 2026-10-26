@@ -1,0 +1,11 @@
+{
+  "data_root": "../videos",
+  "courses": [
+    {
+      "id": "example-course",
+      "name": "示例课程",
+      "teacher": "",
+      "directory": "示例课程"
+    }
+  ]
+}
