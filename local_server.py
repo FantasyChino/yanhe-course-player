@@ -1,7 +1,8 @@
-"""Serve the offline player and explicitly configured courses on loopback only.
+"""Serve local courses and authenticated online playback on loopback only.
 
 The media API exposes stable course/session IDs, never user-supplied file paths.
-No third-party modules, network requests, credentials, or video copies are used.
+Local playback uses no external service. Online playback relays authorized streams
+without saving recordings or exposing login credentials to the browser.
 """
 from __future__ import annotations
 
@@ -21,12 +22,14 @@ import sys
 import threading
 import time
 import unicodedata
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
+
+from online_service import OnlineError, OnlineService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 APP_ID = "yanhe-duo-player"
-APP_VERSION = "1.2"
+APP_VERSION = "1.3"
 DEFAULT_PORT = 8767
 FILE_PATTERN = re.compile(
     r"^(?P<index>\d+)_(?P<title>.+)_(?P<session>\d+)(?:_part(?P<part>\d+))?\.mp4$",
@@ -335,18 +338,20 @@ class PlayerServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 32
 
-    def __init__(self, port: int, *, project_root: Path = PROJECT_ROOT, config_path: Path | None = None):
+    def __init__(self, port: int, *, project_root: Path = PROJECT_ROOT, config_path: Path | None = None,
+                 auth_file: Path | None = None):
         self.project_root = project_root.resolve()
         self.instance = project_instance(self.project_root)
         self.static_root = self.project_root / "dist"
         self.config = load_config(self.project_root, config_path)
         self.library = CourseLibrary(self.config)
+        self.online = OnlineService(auth_file=auth_file)
         super().__init__(("127.0.0.1", port), PlayerHandler)
 
 
 class PlayerHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "YanheDuo/1.2"
+    server_version = "YanheDuo/1.3"
     sys_version = ""
 
     def setup(self):
@@ -434,7 +439,7 @@ class PlayerHandler(BaseHTTPRequestHandler):
             if selected is not None:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             if path.suffix.lower() == ".html":
-                self.send_header("Content-Security-Policy", "default-src 'self'; media-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'self'; media-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
             self.end_headers()
             if head_only:
                 return
@@ -447,6 +452,41 @@ class PlayerHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
 
+    def _online_json(self, payload, head_only=False):
+        self._bytes(json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    "application/json; charset=utf-8", head_only)
+
+    def _online_error(self, error, head_only=False):
+        self._bytes(json.dumps({"error": {"code": error.code, "message": error.message}},
+                               ensure_ascii=False).encode("utf-8"),
+                    "application/json; charset=utf-8", head_only, error.status)
+
+    def _online_resource(self, resource_id, head_only):
+        status, headers, body = self.server.online.proxy(resource_id, self.headers.get("Range"), head_only)
+        try:
+            self.send_response(status)
+            for key, value in headers.items():
+                if key.lower() in {"content-type", "content-length", "content-range", "accept-ranges"}:
+                    self.send_header(key, value)
+            self.send_header("Cache-Control", "no-store")
+            if not any(key.lower() == "content-length" for key in headers):
+                self.send_header("Connection", "close")
+                self.close_connection = True
+            self.end_headers()
+            if head_only:
+                return
+            if isinstance(body, bytes):
+                self.wfile.write(body)
+            else:
+                try:
+                    for chunk in body:
+                        self.wfile.write(chunk)
+                except OnlineError:
+                    self.close_connection = True
+        finally:
+            if hasattr(body, "close"):
+                body.close()
+
     def _dispatch(self, head_only: bool):
         try:
             if not self._allowed_request():
@@ -457,6 +497,7 @@ class PlayerHandler(BaseHTTPRequestHandler):
                 self._error(404, head_only)
                 return
             path = unquote(parsed.path)
+            query = parse_qs(parsed.query, max_num_fields=12)
             if "\x00" in path or "\\" in path or any(part in (".", "..") for part in path.split("/")):
                 self._error(404, head_only)
                 return
@@ -466,6 +507,21 @@ class PlayerHandler(BaseHTTPRequestHandler):
                 self._bytes(body, "application/json; charset=utf-8", head_only)
             elif path == "/api/library":
                 self._bytes(self.server.library.snapshot(), "application/json; charset=utf-8", head_only)
+            elif path == "/api/online/status":
+                self._online_json(self.server.online.status(check=query.get("check", [""])[0] == "1"), head_only)
+            elif path == "/api/online/search":
+                self._online_json(self.server.online.search(query.get("q", [""])[0], query.get("page", ["1"])[0]), head_only)
+            elif path == "/api/online/course":
+                self._online_json(self.server.online.course(query.get("id", [""])[0]), head_only)
+            elif path == "/api/online/session":
+                self._online_json(self.server.online.session(query.get("course_id", [""])[0],
+                                                              query.get("session_id", [""])[0]), head_only)
+            elif path.startswith("/online-media/"):
+                resource = re.fullmatch(r"/online-media/([A-Za-z0-9_-]{16,80})", path)
+                if resource is None:
+                    self._error(404, head_only)
+                else:
+                    self._online_resource(resource[1], head_only)
             elif path.startswith("/media/"):
                 match = MEDIA_PATTERN.fullmatch(path)
                 item = self.server.library.media(*match.groups()) if match else None
@@ -482,9 +538,13 @@ class PlayerHandler(BaseHTTPRequestHandler):
                     self._error(404, head_only)
                 else:
                     self._stream(resolved, head_only, media=False)
+        except OnlineError as error:
+            self._online_error(error, head_only)
         except ConfigError as error:
             print(f"课程配置错误：{error}", file=sys.stderr)
             self._error(500, head_only)
+        except ValueError:
+            self._error(400, head_only)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
             self.close_connection = True
 
@@ -495,14 +555,41 @@ class PlayerHandler(BaseHTTPRequestHandler):
         self._dispatch(True)
 
     def do_POST(self):
-        self.close_connection = True
-        self._error(405, False)
+        try:
+            if not self._allowed_request() or self.headers.get("X-Requested-With") != "duo-player":
+                self.close_connection = True
+                self._error(403, False)
+                return
+            path = urlsplit(self.path).path
+            if path not in {"/api/online/auth", "/api/online/logout"}:
+                self.close_connection = True
+                self._error(405, False)
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 16384 or self.headers.get_content_type() != "application/json":
+                raise OnlineError(400, "invalid_body", "请求格式无效。")
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(body, dict):
+                raise OnlineError(400, "invalid_body", "请求格式无效。")
+            if path == "/api/online/auth":
+                self._online_json(self.server.online.set_auth(body.get("token")))
+            else:
+                self._online_json(self.server.online.clear_auth())
+        except OnlineError as error:
+            self.close_connection = True
+            self._online_error(error)
+        except (ValueError, UnicodeError):
+            self.close_connection = True
+            self._error(400, False)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
+            self.close_connection = True
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="在本机打开双视频课程库；仅监听 127.0.0.1。")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--config", type=Path, help="课程配置 JSON；默认 config/courses.json，不存在时读取 courses.example.json")
+    parser.add_argument("--auth-file", type=Path, help="可选：从自己的本地文件载入延河课堂登录凭据；凭据不会通过接口返回或写入新文件")
     parser.add_argument("--no-browser", action="store_true", help="兼容启动器参数；服务本身始终不自动打开浏览器")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
@@ -511,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
         print("未找到播放器文件 dist/index.html。", file=sys.stderr)
         return 1
     try:
-        server = PlayerServer(args.port, project_root=PROJECT_ROOT, config_path=args.config)
+        server = PlayerServer(args.port, project_root=PROJECT_ROOT, config_path=args.config, auth_file=args.auth_file)
     except ConfigError as error:
         print(f"课程配置错误：{error}", file=sys.stderr)
         return 1

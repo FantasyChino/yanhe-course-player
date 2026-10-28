@@ -12,6 +12,7 @@ assert '<script defer src="./player.js"></script>' in html
 html = html.replace('<link rel="stylesheet" href="./styles.css">', '<style>\n' + css + '\n</style>')
 html = html.replace('<script defer src="./player.js"></script>',
                     '<script>\ndocument.addEventListener("DOMContentLoaded", () => {\n' + js + '\n});\n</script>')
+html = html.replace('<script defer src="./vendor/hls.min.js"></script>', '')
 output = root / 'build' / 'offline-player.html'
 output.parent.mkdir(exist_ok=True)
 output.write_text(html, encoding='utf-8')

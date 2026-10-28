@@ -1,7 +1,8 @@
 ﻿param(
     [switch]$NoBrowser,
     [ValidateRange(1, 65535)][int]$Port = 8767,
-    [string]$Config = ''
+    [string]$Config = '',
+    [string]$AuthFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +75,11 @@ try {
             $PlayerConfigPath = [IO.Path]::GetFullPath($Config)
             if (-not (Test-Path -LiteralPath $PlayerConfigPath)) { throw '没有找到指定的课程配置文件。' }
             $PlayerArguments += ' --config "' + $PlayerConfigPath + '"'
+        }
+        if ($AuthFile) {
+            $PlayerAuthPath = [IO.Path]::GetFullPath($AuthFile)
+            if (-not (Test-Path -LiteralPath $PlayerAuthPath)) { throw '没有找到指定的登录凭据文件。' }
+            $PlayerArguments += ' --auth-file "' + $PlayerAuthPath + '"'
         }
         $env:PYTHONIOENCODING = 'utf-8'
         $PlayerProcess = Start-Process -FilePath $PlayerPython -ArgumentList $PlayerArguments `

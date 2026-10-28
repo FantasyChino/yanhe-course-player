@@ -33,9 +33,14 @@
     size: [20, 26, 32, 40].includes(prefs.subtitleSize) ? prefs.subtitleSize : 26,
   };
   const library = { courses: [], courseId: '', lessonId: '', active: null };
+  const online = { source: 'local', courses: [], course: null, active: null, lessonId: '',
+    query: '', page: 0, hasMore: false, searchRun: 0, courseRun: 0, sessionRun: 0,
+    searchController: null, courseController: null, sessionController: null };
+  const serviceAvailable = /^https?:$/.test(location.protocol)
+    && ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 
   function message(text) { $('status-message').textContent = text; }
-  function available() { return roles.filter(role => clips[role] && !video[role].error); }
+  function available() { return roles.filter(role => clips[role] && !clips[role].failed && !video[role].error); }
   function paired() { return available().length === 2; }
   function duration() {
     return Math.max(0, ...available().map(role => {
@@ -284,11 +289,14 @@
   }
   function allReady() {
     const time = current();
-    return available().every(role => !inRange(role, time)
-      || (!video[role].seeking && video[role].readyState >= 3));
+    return available().every(role => video[role].readyState >= 1 && Number.isFinite(video[role].duration)
+      && (!inRange(role, time) || (!video[role].seeking && video[role].readyState >= 3)));
   }
   async function startMedia() {
     if (!state.intent || state.starting || state.scrubbing || !available().length) return;
+    if (available().some(role => clips[role].file._onlineMedia) && !allReady()) {
+      state.buffering = true; renderTransport(); return;
+    }
     const time = current();
     const playing = available().filter(role => inRange(role, time));
     if (state.clockRunning && playing.length && playing.every(role => !video[role].paused)) return;
@@ -361,6 +369,7 @@
   function clearClip(role) {
     const previous = clips[role], media = video[role];
     clips[role] = null;
+    if (previous?.hls) previous.hls.destroy();
     media.removeAttribute('src'); media.load();
     if (previous?.objectURL) URL.revokeObjectURL(previous.url);
     $('name-' + role).textContent = '尚未选择视频';
@@ -384,21 +393,27 @@
     state.scrubbing = false;
     if (options.resetOffset) { state.offset = 0; $('offset-input').value = '0.0'; }
     if (options.replaceAll) { roles.forEach(clearClip); clearSubtitles(); }
-    if (!options.fromLibrary && !options.keepLibrary) {
+    if (!options.fromLibrary && !options.keepLibrary && !options.fromOnline) {
+      cancelOnlineNavigation();
       library.active = null;
+      online.active = null;
       if (library.courses.length) { $('library-current').textContent = '当前：手动导入的视频'; renderLibraryLessons(); }
+      if (online.source === 'online') { $('online-current').textContent = '当前：手动导入的视频'; renderOnlineLessons(); }
     }
+    if (options.fromLibrary) online.active = null;
+    if (options.fromOnline) library.active = null;
     valid.forEach(([role, file]) => {
       const media = video[role];
       const previous = clips[role];
+      if (previous?.hls) previous.hls.destroy();
       media.removeAttribute('src');
       if (previous?.objectURL) URL.revokeObjectURL(previous.url);
-      const objectURL = file._libraryMedia !== true;
+      const objectURL = file._libraryMedia !== true && file._onlineMedia !== true;
       const url = objectURL ? URL.createObjectURL(file) : file.url;
       clips[role] = { file, url, objectURL, startTime: time, lastCorrection: performance.now() };
       media.preload = objectURL ? 'auto' : 'metadata';
-      media.src = url;
-      media.load();
+      if (file._onlineMedia && file.kind === 'hls') attachOnlineStream(role, clips[role]);
+      else { media.src = url; media.load(); }
       $('name-' + role).textContent = file.name;
       $('name-' + role).title = file.name;
       $('empty-' + role).hidden = true;
@@ -408,9 +423,9 @@
     state.intent = playing;
     state.buffering = false;
     state.resumeKey = '';
-    if ((!state.audioTouched || options.fromLibrary) && state.audio !== 'mute'
+    if ((!state.audioTouched || options.fromLibrary || options.fromOnline) && state.audio !== 'mute'
         && !clips[state.audio] && available().length === 1) state.audio = available()[0];
-    if (options.fromLibrary && available().length === 1) setMode(available()[0]);
+    if ((options.fromLibrary || options.fromOnline) && available().length === 1) setMode(available()[0]);
     setAudio(); setRate(state.rate); restoreOffer(); renderTransport();
     message(valid.length === 2 ? '两个视频已导入。可随时切换画面、音频和倍速。' : '视频已导入；另一画面可以继续拖入。');
   }
@@ -437,6 +452,248 @@
     if (files.some(isVideo)) importPair(files, preferredRole);
     else if (!subtitle) message('请拖入视频或 SRT / VTT 字幕文件。');
   }
+  function attachOnlineStream(role, clip) {
+    const media = video[role];
+    const Hls = window.Hls;
+    if (!Hls?.isSupported()) {
+      if (media.canPlayType('application/vnd.apple.mpegurl')) {
+        media.preload = 'auto'; media.src = clip.url; media.load(); return;
+      }
+      clip.failed = true;
+      queueMicrotask(() => message('此浏览器暂不支持在线 HLS，请使用新版 Chrome / Edge。本地视频仍可播放。'));
+      return;
+    }
+    const hls = new Hls({ enableWorker: true, lowLatencyMode: false, maxBufferLength: 15,
+      maxMaxBufferLength: 30, backBufferLength: 20, maxBufferSize: 12 * 1024 * 1024 });
+    clip.hls = hls;
+    hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (clips[role] === clip) hls.loadSource(clip.url); });
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (clips[role] !== clip || !data.fatal) return;
+      clip.failed = true; state.intent = false; state.buffering = false; pauseMedia();
+      message('在线录像暂时无法读取。请检查延河课堂登录状态，或重新选择这一节重试。');
+      onlineStatus('播放连接中断，可重新点选节次重试。', true);
+      updateOnlineAuth(false); renderTransport();
+    });
+    hls.attachMedia(media);
+  }
+  function onlineStatus(text, error = false) {
+    $('online-status').textContent = text;
+    $('online-status').dataset.state = error ? 'error' : 'ready';
+  }
+  async function onlineRequest(path, { signal, body } = {}) {
+    if (!serviceAvailable) throw new Error('在线课程需要本机服务，请通过桌面快捷方式打开播放器。');
+    let response;
+    try {
+      response = await fetch(path, { signal, cache: 'no-store', ...(body === undefined ? {} : {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'duo-player' },
+        body: JSON.stringify(body),
+      }) });
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      throw new Error('无法连接本机课程服务，请从桌面快捷方式重新打开。');
+    }
+    let data;
+    try { data = await response.json(); } catch { throw new Error('在线接口暂时不可用，请重新启动播放器。'); }
+    if (!response.ok) {
+      if (response.status === 401) {
+        $('online-auth-status').textContent = '请重新配置登录';
+        $('online-auth-status').dataset.state = 'expired'; $('online-auth-panel').open = true;
+      }
+      throw new Error(typeof data.error?.message === 'string' ? data.error.message : '在线课程暂时不可用，请稍后重试。');
+    }
+    return data;
+  }
+  function showOnlineAuth(status) {
+    const label = $('online-auth-status');
+    label.textContent = status.authenticated === true ? '已连接延河课堂'
+      : status.configured ? (status.authenticated === false ? '登录已失效' : '已配置，待验证') : '尚未配置登录';
+    label.dataset.state = status.authenticated === true ? 'authenticated'
+      : status.configured ? (status.authenticated === false ? 'expired' : 'waiting') : 'empty';
+  }
+  async function updateOnlineAuth(check = false) {
+    if (!serviceAvailable) { $('online-auth-status').textContent = '请从桌面快捷方式打开'; return; }
+    $('online-auth-refresh').disabled = true;
+    try {
+      const status = await onlineRequest('/api/online/status' + (check ? '?check=1' : ''));
+      showOnlineAuth(status); return status;
+    } catch (error) { onlineStatus(error.message, true); return null; }
+    finally { $('online-auth-refresh').disabled = false; }
+  }
+  function renderOnlineResults() {
+    const fragment = document.createDocumentFragment();
+    online.courses.forEach(course => {
+      const button = document.createElement('button'); button.type = 'button';
+      button.className = 'online-course-button'; button.dataset.courseId = course.id;
+      if (online.course?.id === course.id) button.setAttribute('aria-current', 'true');
+      const title = document.createElement('span'); title.className = 'online-course-title'; title.textContent = course.name;
+      const meta = document.createElement('span'); meta.className = 'online-course-meta';
+      meta.textContent = [course.teacher, course.term, course.school, `课程编号 ${course.id}`].filter(Boolean).join(' · ');
+      button.append(title, meta); button.addEventListener('click', () => openOnlineCourse(course.id)); fragment.append(button);
+    });
+    $('online-results').replaceChildren(fragment);
+    $('online-more').hidden = !online.hasMore;
+  }
+  function renderOnlineLessons() {
+    if (online.source !== 'online') return;
+    $('lesson-sidebar').hidden = false; $('study-layout').classList.add('library-ready');
+    $('lesson-course-name').textContent = online.course?.name || '在线课程';
+    const lessons = online.course?.lessons || [];
+    $('lesson-count').textContent = `${lessons.length} 节`;
+    const list = document.createDocumentFragment();
+    lessons.forEach((lesson, index) => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'lesson-button';
+      button.dataset.lessonId = lesson.id; button.dataset.onlineLessonId = lesson.id;
+      if (online.active?.courseId === online.course.id && online.active?.lessonId === lesson.id) button.setAttribute('aria-current', 'true');
+      button.disabled = !lesson.camera && !lesson.screen;
+      const number = document.createElement('span'); number.className = 'lesson-number'; number.textContent = String(lesson.index || index + 1).padStart(2, '0');
+      const title = document.createElement('span'); title.className = 'lesson-title'; title.textContent = lesson.title;
+      const meta = document.createElement('span'); meta.className = 'lesson-meta'; meta.textContent = lesson.camera && lesson.screen ? '在线 · 课堂 + PPT' : lesson.camera ? '在线 · 课堂' : '在线 · PPT';
+      button.append(number, title, meta); button.addEventListener('click', () => loadOnlineLesson(lesson.id)); list.append(button);
+    });
+    if (!lessons.length) {
+      const text = document.createElement('p'); text.className = 'lesson-empty';
+      text.textContent = online.course ? '这门课程目前没有可播放的录像。' : '搜索课程名称，或输入课程编号后查看节次。'; list.append(text);
+    }
+    $('lesson-list').replaceChildren(list);
+  }
+  function stopCurrentMedia() {
+    saveProgress(true); state.intent = false; pauseMedia(); roles.forEach(clearClip); clearSubtitles();
+    library.active = null; online.active = null;
+    state.time = 0; state.offset = 0; state.buffering = false; state.scrubbing = false;
+    state.resume = null; state.resumeKey = ''; $('resume-button').hidden = true; $('offset-input').value = '0.0';
+    renderTransport();
+  }
+  function cancelOnlineNavigation() {
+    online.searchRun++; online.courseRun++; online.sessionRun++;
+    online.searchController?.abort(); online.courseController?.abort(); online.sessionController?.abort();
+    $('online-course-open').disabled = false; $('online-search-submit').disabled = false; $('online-more').disabled = false;
+  }
+  function resetOnlineConnection() {
+    cancelOnlineNavigation();
+    if (roles.some(role => clips[role]?.file._onlineMedia)) stopCurrentMedia();
+    online.active = null; online.course = null; online.courses = []; online.hasMore = false;
+    $('online-current').textContent = ''; renderOnlineResults(); renderOnlineLessons();
+  }
+  function setCourseSource(source) {
+    if (!['local', 'online'].includes(source)) return;
+    saveProgress(true); state.intent = false; pauseMedia(); renderTransport();
+    online.source = source;
+    $('course-library').dataset.courseSource = source;
+    $('local-library-panel').hidden = source !== 'local'; $('online-library-panel').hidden = source !== 'online';
+    document.querySelectorAll('button[data-course-source]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.courseSource === source)));
+    $('lesson-source-label').textContent = source === 'online' ? '在线播放 · 按需加载' : '本地视频 · 课堂与 PPT 自动配对';
+    if (source === 'online') { renderOnlineLessons(); updateOnlineAuth(false); }
+    else {
+      cancelOnlineNavigation();
+      if (library.courses.length) {
+        const course = library.courses.find(item => item.id === library.courseId) || library.courses[0];
+        chooseLibraryCourse(course.id); renderLibraryLessons();
+      } else {
+        if (roles.some(role => clips[role]?.file._onlineMedia)) stopCurrentMedia();
+        $('lesson-sidebar').hidden = true; $('study-layout').classList.remove('library-ready');
+      }
+    }
+  }
+  function parseCourseId(value) {
+    value = value.trim();
+    if (/^\d{1,12}$/.test(value)) return value;
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' && ['www.yanhekt.cn', 'yanhekt.cn'].includes(url.hostname)) {
+        const match = url.pathname.match(/^\/course\/(\d{1,12})\/?$/); if (match) return match[1];
+      }
+    } catch { /* The input can be a course ID instead of a URL. */ }
+    throw new Error('请输入课程编号，或 https://www.yanhekt.cn/course/编号 格式的课程链接。');
+  }
+  async function searchOnlineCourses(more = false) {
+    const query = more ? online.query : $('online-search-input').value.trim();
+    if (!query) { onlineStatus('请输入想查找的课程名称。', true); return; }
+    online.searchController?.abort(); online.searchController = new AbortController();
+    const run = ++online.searchRun; const page = more ? online.page + 1 : 1;
+    $('online-search-submit').disabled = true; $('online-more').disabled = true; onlineStatus('正在搜索延河课堂…');
+    try {
+      const data = await onlineRequest('/api/online/search?' + new URLSearchParams({ q: query, page }), { signal: online.searchController.signal });
+      if (run !== online.searchRun) return;
+      online.query = query; online.page = data.page || page; online.hasMore = Boolean(data.has_more);
+      online.courses = more ? [...online.courses, ...data.courses.filter(course => !online.courses.some(item => item.id === course.id))] : data.courses;
+      renderOnlineResults(); showOnlineAuth({ configured: true, authenticated: true });
+      onlineStatus(online.courses.length ? `已找到 ${online.courses.length} 门课程${online.hasMore ? '，可以继续加载结果' : ''}。选择课程查看节次。` : '没有找到匹配课程，可换关键词或使用课程编号。');
+    } catch (error) { if (error.name !== 'AbortError' && run === online.searchRun) onlineStatus(error.message, true); }
+    finally { if (run === online.searchRun) { $('online-search-submit').disabled = false; $('online-more').disabled = false; } }
+  }
+  async function openOnlineCourse(id) {
+    online.courseController?.abort(); online.sessionController?.abort(); online.sessionRun++;
+    online.courseController = new AbortController(); const run = ++online.courseRun;
+    saveProgress(true); state.intent = false; pauseMedia(); renderTransport();
+    onlineStatus('正在读取课程与节次…'); $('online-course-open').disabled = true;
+    try {
+      const course = await onlineRequest('/api/online/course?' + new URLSearchParams({ id }), { signal: online.courseController.signal });
+      if (run !== online.courseRun || online.source !== 'online') return;
+      online.course = course; online.active = null;
+      $('online-current').textContent = [course.name, course.teacher, course.term, `编号 ${course.id}`].filter(Boolean).join(' · ');
+      renderOnlineResults(); renderOnlineLessons(); showOnlineAuth({ configured: true, authenticated: true });
+      onlineStatus(`已读取 ${course.lessons.length} 节录像，选择节次按需播放。`);
+      if (course.lessons.length) {
+        const last = readStore('duo.online.last.' + course.id, '');
+        const lesson = course.lessons.find(item => item.id === last) || course.lessons[0];
+        await loadOnlineLesson(lesson.id);
+      } else stopCurrentMedia();
+    } catch (error) { if (error.name !== 'AbortError' && run === online.courseRun) onlineStatus(error.message, true); }
+    finally { if (run === online.courseRun) $('online-course-open').disabled = false; }
+  }
+  async function loadOnlineLesson(lessonId) {
+    if (!online.course || online.source !== 'online') return;
+    if (online.active?.lessonId === lessonId && roles.some(role => clips[role]?.file._onlineMedia)
+        && roles.every(role => !clips[role]?.failed && !video[role].error)) return;
+    online.sessionController?.abort(); online.sessionController = new AbortController();
+    const run = ++online.sessionRun; const courseId = online.course.id;
+    saveProgress(true); state.intent = false; pauseMedia(); renderTransport(); onlineStatus('正在连接这一节的课堂与 PPT…');
+    try {
+      const data = await onlineRequest('/api/online/session?' + new URLSearchParams({ course_id: courseId, session_id: lessonId }), { signal: online.sessionController.signal });
+      if (run !== online.sessionRun || online.source !== 'online' || online.course.id !== courseId) return;
+      const assignments = {};
+      roles.forEach(role => {
+        const source = data[role]; if (!source || typeof source.url !== 'string') return;
+        const url = new URL(source.url, location.href);
+        if (url.origin !== location.origin || !/^\/online-media\/[A-Za-z0-9_-]{16,80}$/.test(url.pathname)) return;
+        assignments[role] = { ...source, url: url.href, type: 'video/mp4', size: 0, lastModified: 0,
+          identity: `online:${courseId}:${lessonId}:${role}`, _onlineMedia: true };
+      });
+      if (!Object.keys(assignments).length) throw new Error('这一节没有可播放的录像。');
+      online.lessonId = lessonId; online.active = { courseId, lessonId };
+      assignFiles(assignments, 0, { paused: true, replaceAll: true, resetOffset: true, fromOnline: true });
+      $('online-current').textContent = `${data.course.name} · 第 ${data.lesson.index} 节 · ${data.lesson.title}`;
+      writeStore('duo.online.last.' + courseId, lessonId); renderOnlineLessons();
+      onlineStatus('已接入在线录像。点击播放；视频按需缓冲，不生成整节视频文件。');
+      message('在线课堂与 PPT 已准备，点击播放开始。音频、倍速和字幕控制仍可使用。');
+    } catch (error) { if (error.name !== 'AbortError' && run === online.sessionRun) onlineStatus(error.message, true); }
+  }
+  document.querySelectorAll('button[data-course-source]').forEach(button => button.addEventListener('click', () => setCourseSource(button.dataset.courseSource)));
+  $('online-search-form').addEventListener('submit', event => { event.preventDefault(); searchOnlineCourses(); });
+  $('online-more').addEventListener('click', () => searchOnlineCourses(true));
+  $('online-direct-form').addEventListener('submit', event => {
+    event.preventDefault();
+    try { openOnlineCourse(parseCourseId($('online-course-input').value)); } catch (error) { onlineStatus(error.message, true); }
+  });
+  $('online-auth-refresh').addEventListener('click', () => updateOnlineAuth(true));
+  $('online-auth-save').addEventListener('click', async () => {
+    const input = $('online-auth-input'); if (!input.value.trim()) { onlineStatus('请先粘贴自己账号的登录凭据。', true); return; }
+    $('online-auth-save').disabled = true;
+    try {
+      showOnlineAuth(await onlineRequest('/api/online/auth', { body: { token: input.value.trim() } }));
+      input.value = ''; resetOnlineConnection();
+      const status = await updateOnlineAuth(true);
+      if (status?.authenticated) onlineStatus('已连接延河课堂，现在可以搜索课程或输入课程编号。');
+    } catch (error) { input.value = ''; onlineStatus(error.message, true); }
+    finally { $('online-auth-save').disabled = false; }
+  });
+  $('online-auth-clear').addEventListener('click', async () => {
+    try {
+      showOnlineAuth(await onlineRequest('/api/online/logout', { body: {} })); $('online-auth-input').value = '';
+      resetOnlineConnection();
+      onlineStatus('已清除本次服务中的登录凭据。本地视频仍可使用。');
+    } catch (error) { onlineStatus(error.message, true); }
+  });
   function libraryMedia(source, courseId, lessonId, role) {
     if (!source || typeof source.url !== 'string' || typeof source.name !== 'string') return null;
     const url = new URL(source.url, location.href);
@@ -445,6 +702,7 @@
       type: 'video/mp4', url: url.href, identity: `library:${courseId}:${lessonId}:${role}`, _libraryMedia: true };
   }
   function renderLibraryLessons() {
+    if (online.source !== 'local') return;
     const course = library.courses.find(item => item.id === library.courseId);
     if (!course) return;
     $('lesson-course-name').textContent = course.name;
@@ -507,6 +765,7 @@
       state.time = 0; state.offset = 0; state.buffering = false;
       state.resume = null; state.resumeKey = ''; $('resume-button').hidden = true; $('offset-input').value = '0.0';
       library.active = null; library.lessonId = '';
+      online.active = null;
       $('library-course').value = courseId;
       $('library-current').textContent = `${course.name} · 暂无视频`;
       $('library-status').textContent = '课程目录中没有找到 MP4，请检查课程配置与视频目录。';
@@ -528,14 +787,15 @@
         const option = document.createElement('option'); option.value = course.id;
         option.textContent = course.name + (course.teacher ? ` · ${course.teacher}` : ''); return option;
       }));
-      $('library-controls').hidden = false; $('lesson-sidebar').hidden = false;
-      $('study-layout').classList.add('library-ready');
+      $('library-controls').hidden = false;
+      if (online.source === 'local') { $('lesson-sidebar').hidden = false; $('study-layout').classList.add('library-ready'); }
       if (!library.courses.length) {
         $('library-course').disabled = true; $('library-status').textContent = '还没有找到课程，请检查本地课程文件夹。'; return;
       }
       const saved = readStore('duo.library.selection', {});
       const course = library.courses.find(item => item.id === saved.courseId) || library.courses[0];
-      chooseLibraryCourse(course.id);
+      library.courseId = course.id;
+      if (online.source === 'local') chooseLibraryCourse(course.id);
     } catch {
       $('library-status').textContent = '本地课程库暂时无法读取，请从桌面快捷方式重新打开。也可以手动导入视频。';
     }

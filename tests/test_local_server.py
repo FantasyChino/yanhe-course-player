@@ -316,7 +316,7 @@ class LocalServerTests(unittest.TestCase):
         with mock.patch.object(player, "PROJECT_ROOT", self.root), mock.patch.object(player, "PlayerServer", return_value=fake) as create:
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(player.main(["--config", str(self.config_path)]), 0)
-        create.assert_called_once_with(8767, project_root=self.root, config_path=self.config_path)
+        create.assert_called_once_with(8767, project_root=self.root, config_path=self.config_path, auth_file=None)
         fake.server_close.assert_called_once()
 
 

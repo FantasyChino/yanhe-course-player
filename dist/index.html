@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f5f6f2">
-  <meta name="description" content="在本地同步播放 PPT 与课堂录像，随时切换双画面或单画面。视频始终留在你的电脑上。">
+  <meta name="description" content="同步观看延河课堂 PPT 与课堂录像，支持在线搜索、按需播放和本地课程库，随时切换双画面或单画面。">
   <title>同频 · 双视频学习播放器</title>
   <link rel="stylesheet" href="./styles.css">
+  <script defer src="./vendor/hls.min.js"></script>
   <script defer src="./player.js"></script>
 </head>
 <body>
@@ -31,6 +32,8 @@
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Zm0 2h18"/></symbol>
       <symbol id="i-subtitle" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M10 10a2 2 0 1 0 0 4m8-4a2 2 0 1 0 0 4"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a18 18 0 0 1 0 18 18 18 0 0 1 0-18Z"/></symbol>
     </defs>
   </svg>
 
@@ -40,7 +43,7 @@
         <span class="brand-symbol" aria-hidden="true"><span></span><span></span></span>
         <span class="brand-name">同频<span class="brand-english">DUO PLAYER</span></span>
       </a>
-      <div class="header-right"><span class="local-badge"><span class="status-dot"></span>本地学习空间</span><span class="version">v1.2</span></div>
+      <div class="header-right"><span class="local-badge"><span class="status-dot"></span>双画面学习空间</span><span class="version">v1.3</span></div>
     </header>
 
     <main>
@@ -48,7 +51,7 @@
         <div class="intro-copy">
           <p class="eyebrow">TWO VIEWS. ONE TIMELINE.</p>
           <h1 id="page-title">双画面，一起看懂<span class="title-dot">。</span></h1>
-          <p class="intro-description">PPT 看细节，课堂听讲解。选一节课，或拖入两个视频，让学习回到同一个节奏。</p>
+          <p class="intro-description">PPT 看细节，课堂听讲解。在线找课，或打开本地视频，让学习回到同一个节奏。</p>
         </div>
         <button id="pick-pair" class="button button-primary" type="button" title="同时选择本地 PPT 与课堂视频" aria-label="选择两个本地视频"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>选择两个视频</button>
       </section>
@@ -58,13 +61,46 @@
       <input id="file-pair" type="file" accept="video/*" multiple hidden>
       <input id="file-subtitle" type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>
 
-      <section id="course-library" class="course-library" aria-labelledby="library-title">
-        <h2 id="library-title" class="library-title"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地课程库</h2>
-        <div id="library-controls" class="library-controls" hidden>
-          <label class="library-course-label" for="library-course"><span class="visually-hidden">选择课程</span><select id="library-course" title="选择本地课程" aria-label="选择本地课程"><option value="">选择课程</option></select><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></label>
-          <p id="library-current" class="library-current">选择节次，自动载入 PPT 与课堂录像</p>
+      <section id="course-library" class="course-library" aria-labelledby="library-title" data-course-source="local">
+        <div class="library-header">
+          <h2 id="library-title" class="library-title"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>课程空间</h2>
+          <div id="source-switch" class="source-switch" role="group" aria-label="选择课程来源">
+            <button type="button" data-course-source="local" aria-pressed="true" aria-controls="local-library-panel" title="浏览已下载的本地课程"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地课程</button>
+            <button type="button" data-course-source="online" aria-pressed="false" aria-controls="online-library-panel" title="搜索延河课堂并在线按需播放"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>在线课程</button>
+          </div>
         </div>
-        <p id="library-status" class="library-status" role="status" aria-live="polite">通过桌面快捷方式打开，即可读取课程库</p>
+        <div id="local-library-panel" class="local-library-panel">
+          <div id="library-controls" class="library-controls" hidden>
+            <label class="library-course-label" for="library-course"><span class="visually-hidden">选择课程</span><select id="library-course" title="选择本地课程" aria-label="选择本地课程"><option value="">选择课程</option></select><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></label>
+            <p id="library-current" class="library-current">选择节次，自动载入 PPT 与课堂录像</p>
+          </div>
+          <p id="library-status" class="library-status" role="status" aria-live="polite">通过桌面快捷方式打开，即可读取课程库</p>
+        </div>
+        <div id="online-library-panel" class="online-library-panel" hidden>
+          <div class="online-auth-row">
+            <span class="online-auth-label"><span class="status-dot"></span>延河课堂登录</span>
+            <span id="online-auth-status" class="online-auth-status" role="status" aria-live="polite">正在检查登录状态…</span>
+            <button id="online-auth-refresh" class="text-button" type="button" title="重新检查延河课堂登录状态">检查状态</button>
+            <a class="online-login-link" href="https://www.yanhekt.cn/" target="_blank" rel="noopener noreferrer" title="在新标签页打开延河课堂并自行登录">打开延河课堂 ↗</a>
+          </div>
+          <details id="online-auth-panel" class="online-auth-panel">
+            <summary>配置登录凭据<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
+            <div class="online-auth-config">
+              <label for="online-auth-input">延河课堂登录凭据</label>
+              <p id="online-auth-help">用于本机请求延河课堂，失效后重新配置。凭据仅保留在本次服务内存中。</p>
+              <p class="online-auth-guide">请先在自己的浏览器登录延河课堂，再按<a href="https://github.com/BITNP/BIT_yanhe_download/blob/main/README.md#登录延河课堂" target="_blank" rel="noopener noreferrer">上游登录说明 ↗</a>获取凭据。这里无需输入账号或密码。</p>
+              <div class="online-auth-input-row"><input id="online-auth-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴登录凭据" aria-describedby="online-auth-help" aria-label="延河课堂登录凭据"><button id="online-auth-save" class="online-button" type="button" title="仅为本次本机服务配置登录凭据">使用凭据</button><button id="online-auth-clear" class="text-button" type="button" title="清除本次服务使用的登录凭据">清除</button></div>
+            </div>
+          </details>
+          <form id="online-search-form" class="online-search-form" role="search" aria-label="搜索在线课程">
+            <label class="visually-hidden" for="online-search-input">搜索课程名称</label><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="online-search-input" type="search" autocomplete="off" placeholder="搜索课程名称，例如：电路分析基础" aria-label="搜索课程名称"><button id="online-search-submit" class="online-button" type="submit" title="在延河课堂搜索课程名称">搜索课程</button>
+          </form>
+          <p id="online-status" class="online-status" role="status" aria-live="polite">输入课程名称查找，选择课程后在目录中打开节次。</p>
+          <p id="online-current" class="online-current"></p>
+          <div id="online-results" class="online-results" role="list" aria-label="在线课程搜索结果"></div>
+          <button id="online-more" class="online-more" type="button" title="加载下一页课程搜索结果" hidden>加载更多课程<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+          <form id="online-direct-form" class="online-direct-form" aria-label="使用课程编号或链接打开课程"><label for="online-course-input">课程编号 / 链接</label><input id="online-course-input" type="text" autocomplete="off" placeholder="例如 63093 或延河课堂课程链接" aria-label="课程编号或延河课堂课程链接"><button id="online-course-open" class="online-direct-open" type="submit" title="按课程编号或链接直接打开">打开课程<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button></form>
+        </div>
       </section>
 
       <div id="study-layout" class="study-layout">
@@ -72,7 +108,7 @@
           <summary class="lesson-sidebar-heading"><span>课程目录</span><span id="lesson-count" class="lesson-sidebar-hint">0 节</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
           <h3 id="lesson-course-name" class="lesson-course-name">课程节次</h3>
           <div id="lesson-list" class="lesson-list" role="list" aria-label="课程节次"><p class="lesson-empty">选择课程后，在这里查看全部节次</p></div>
-          <p class="lesson-sidebar-note"><span class="status-dot"></span>课堂与 PPT 自动配对</p>
+          <p class="lesson-sidebar-note"><span class="status-dot"></span><span id="lesson-source-label">本地视频 · 课堂与 PPT 自动配对</span></p>
         </details>
 
       <div class="player-column">
@@ -165,7 +201,7 @@
       <section class="how-it-works" aria-label="使用提示"><div><span class="step-number">01</span><div><h3>选课即播</h3><p>选择课程和节次，也可手动拖入视频</p></div></div><div><span class="step-number">02</span><div><h3>共享同一条时间轴</h3><p>播放、暂停、拖动进度，一次控制两个画面</p></div></div><div><span class="step-number">03</span><div><h3>按自己的节奏学习</h3><p>随时切换画面、音频与播放倍速</p></div></div></section>
     </main>
 
-    <footer class="app-footer"><span class="footer-note"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>视频只在本地读取，不上传到服务器</span><span class="footer-signature">专注此刻，同频学习<span class="footer-spark">✳</span></span></footer>
+    <footer class="app-footer"><span class="footer-note"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span id="playback-privacy-note">本地视频在本机读取；在线课程从延河课堂按需加载</span></span><span class="footer-signature">专注此刻，同频学习<span class="footer-spark">✳</span></span></footer>
   </div>
 </body>
 </html>
