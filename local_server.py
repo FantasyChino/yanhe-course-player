@@ -29,7 +29,7 @@ from online_service import OnlineError, OnlineService
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 APP_ID = "yanhe-duo-player"
-APP_VERSION = "1.3"
+APP_VERSION = "1.3.1"
 DEFAULT_PORT = 8767
 FILE_PATTERN = re.compile(
     r"^(?P<index>\d+)_(?P<title>.+)_(?P<session>\d+)(?:_part(?P<part>\d+))?\.mp4$",
@@ -351,7 +351,7 @@ class PlayerServer(ThreadingHTTPServer):
 
 class PlayerHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "YanheDuo/1.3"
+    server_version = "YanheDuo/1.3.1"
     sys_version = ""
 
     def setup(self):

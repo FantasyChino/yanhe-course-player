@@ -322,11 +322,27 @@ class OnlineService:
     @staticmethod
     def _course_summary(row):
         professors = row.get("professors") or []
-        teachers = [str(item.get("name", "")).strip() for item in professors if isinstance(item, dict)]
-        teacher = "、".join(item for item in teachers if item) or str(row.get("professor_name") or "")
-        year = str(row.get("school_year") or "")
-        semester = row.get("semester")
-        term = year + (f" 第 {semester} 学期" if semester not in (None, "") else "")
+        if isinstance(professors, (str, dict)):
+            professors = [professors]
+        elif not isinstance(professors, (list, tuple)):
+            professors = []
+        teachers = []
+        for item in professors:
+            if isinstance(item, str):
+                name = item
+            elif isinstance(item, dict):
+                name = item.get("name") or item.get("name_zh")
+            else:
+                continue
+            if isinstance(name, str) and name.strip() and name.strip() not in teachers:
+                teachers.append(name.strip())
+        teacher = "、".join(teachers) or str(row.get("professor_name") or "").strip()
+        year = str(row.get("school_year") or "").strip()
+        semester = str(row.get("semester") or "").strip()
+        semester = {"1": "第一学期", "2": "第二学期"}.get(semester, semester)
+        if semester.isdigit():
+            semester = f"第{semester}学期"
+        term = year + semester
         return {"id": str(row.get("id", "")), "name": str(row.get("name_zh") or row.get("name") or "未命名课程"),
                 "teacher": teacher, "term": term.strip(),
                 "school": str(row.get("college_name") or row.get("university_name") or "")}

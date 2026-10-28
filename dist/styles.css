@@ -99,6 +99,9 @@ h1{font-size:clamp(26px,2.3vw,34px);line-height:1.35;font-weight:650;letter-spac
 .online-course-button:hover{border-color:#bdcfae;background:#f4f8ef;color:#3c713d;box-shadow:0 2px 8px #476e3210}
 .online-course-button[aria-current="true"],.online-course-button.active,.online-course-button.is-active{border-color:#a3c28e;background:#edf5e6;color:#39713d}
 .online-course-title{display:block;min-width:0;font-size:12px;font-weight:600;line-height:1.8;overflow-wrap:anywhere}
+.online-course-details{display:flex;flex-direction:column;gap:3px;min-width:0;margin-top:7px}
+.online-course-term,.online-course-teacher{display:block;min-width:0;max-width:100%;margin:0;color:#607657;font-size:11px;font-weight:400;line-height:1.8;white-space:normal;overflow-wrap:anywhere;word-break:normal;overflow:visible;text-overflow:clip}
+.online-course-button[aria-current="true"] .online-course-term,.online-course-button[aria-current="true"] .online-course-teacher,.online-course-button.active .online-course-term,.online-course-button.active .online-course-teacher,.online-course-button.is-active .online-course-term,.online-course-button.is-active .online-course-teacher{color:#3e643f}
 .online-course-meta{display:block;min-width:0;margin-top:5px;font-size:10px;font-weight:400;line-height:1.8;color:#9aae8c;overflow-wrap:anywhere}
 .online-direct-form{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;min-width:0;margin-top:14px;padding-top:13px;border-top:1px solid #e7eddf}
 .online-direct-form>label{font-size:10px;color:#98a98a;white-space:nowrap}

@@ -526,9 +526,15 @@
       button.className = 'online-course-button'; button.dataset.courseId = course.id;
       if (online.course?.id === course.id) button.setAttribute('aria-current', 'true');
       const title = document.createElement('span'); title.className = 'online-course-title'; title.textContent = course.name;
+      const details = document.createElement('span'); details.className = 'online-course-details';
+      const term = document.createElement('span'); term.className = 'online-course-term';
+      term.textContent = '开课学期：' + (course.term || '平台暂未提供');
+      const teacher = document.createElement('span'); teacher.className = 'online-course-teacher';
+      teacher.textContent = '教师：' + (course.teacher || '平台暂未提供');
+      details.append(term, teacher);
       const meta = document.createElement('span'); meta.className = 'online-course-meta';
-      meta.textContent = [course.teacher, course.term, course.school, `课程编号 ${course.id}`].filter(Boolean).join(' · ');
-      button.append(title, meta); button.addEventListener('click', () => openOnlineCourse(course.id)); fragment.append(button);
+      meta.textContent = [course.school, `课程编号 ${course.id}`].filter(Boolean).join(' · ');
+      button.append(title, details, meta); button.addEventListener('click', () => openOnlineCourse(course.id)); fragment.append(button);
     });
     $('online-results').replaceChildren(fragment);
     $('online-more').hidden = !online.hasMore;

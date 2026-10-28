@@ -209,10 +209,26 @@ class OnlineServiceTests(unittest.TestCase):
         self.assertEqual(set(first["courses"][0]), {"id", "name", "teacher", "term", "school"})
         self.assertEqual(first["courses"][0]["id"], "123")
         self.assertEqual(first["courses"][0]["teacher"], "Teacher")
+        self.assertEqual(first["courses"][0]["term"], "2025-2026第一学期")
         search = [r for r in self.opener.requests if urlsplit(r.full_url).path == "/v2/course/list"]
         self.assertEqual(parse_qs(urlsplit(search[1].full_url).query)["page_size"], ["20"])
         self.assertEqual(parse_qs(urlsplit(search[1].full_url).query)["keyword"], ["Synthetic"])
         self.assertNotIn("private_user_field", json.dumps(first))
+
+    def test_course_metadata_handles_search_names_and_multiple_professors(self):
+        summary = OnlineService._course_summary({"id": 123, "name_zh": "Course",
+            "professors": [" 教师甲 ", "教师乙", "教师甲"], "school_year": "2025-2026", "semester": "2"})
+        self.assertEqual(summary["teacher"], "教师甲、教师乙")
+        self.assertEqual(summary["term"], "2025-2026第二学期")
+        summary = OnlineService._course_summary({"id": 123, "professors": [{"name_zh": "教师甲"}, {"name": "教师乙"}],
+            "school_year": "2024-2025", "semester": "第一学期"})
+        self.assertEqual(summary["teacher"], "教师甲、教师乙")
+        self.assertEqual(summary["term"], "2024-2025第一学期")
+
+    def test_missing_course_metadata_stays_empty_for_display_placeholder(self):
+        summary = OnlineService._course_summary({"id": 123, "professors": None})
+        self.assertEqual(summary["teacher"], "")
+        self.assertEqual(summary["term"], "")
 
     def test_course_fallback_schema_and_session_opaque_descriptors(self):
         self.opener.v2_empty = True
